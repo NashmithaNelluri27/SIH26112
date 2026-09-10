@@ -1,0 +1,1214 @@
+#include <WiFi.h>
+#include <PubSubClient.h>
+
+// =====================================================
+// WIFI
+// =====================================================
+
+const char* WIFI_SSID = "vivo_V30e";
+const char* WIFI_PASSWORD = "99887766";
+
+
+// =====================================================
+// MQTT
+// =====================================================
+
+const char* MQTT_SERVER = "broker.hivemq.com";
+const int MQTT_PORT = 1883;
+
+const char* BASE_TOPIC = "amr/demo/amr01";
+
+String COMMAND_TOPIC   = String(BASE_TOPIC) + "/command";
+String STATUS_TOPIC    = String(BASE_TOPIC) + "/status";
+String TELEMETRY_TOPIC = String(BASE_TOPIC) + "/telemetry";
+
+WiFiClient espClient;
+PubSubClient mqtt(espClient);
+
+
+// =====================================================
+// MOTOR PINS
+// =====================================================
+
+// Left motor
+#define LEFT_IN1 26
+#define LEFT_IN2 27
+
+// Right motor
+#define RIGHT_IN1 13
+#define RIGHT_IN2 14
+
+
+// =====================================================
+// ULTRASONIC SENSOR 1
+// =====================================================
+
+#define TRIG1 5
+#define ECHO1 18
+
+
+// =====================================================
+// ULTRASONIC SENSOR 2
+// =====================================================
+
+#define TRIG2 19
+#define ECHO2 23
+
+
+// =====================================================
+// SETTINGS
+// =====================================================
+
+// Obstacle threshold
+const int OBSTACLE_DISTANCE = 10;
+
+
+// =====================================================
+// VARIABLES
+// =====================================================
+
+bool autoMode = false;
+bool manualForwardMode = false;
+
+String currentTask = "NONE";
+String motorStatus = "STOP";
+
+unsigned long lastTelemetry = 0;
+
+// =====================================================
+// PHYSICAL DIGITAL TWIN TELEMETRY (ADDED)
+// =====================================================
+String twinNavState = "IDLE";
+String twinRerouteSide = "NONE";
+String twinRouteInfo = "No active route";
+unsigned long lastTwinTelemetry = 0;
+
+// =====================================================
+// DIGITAL TWIN ROUTE EXECUTION
+// =====================================================
+bool navSegmentActive = false;
+String navHeading = "E";
+String navTurn = "NONE";
+unsigned long navTurnUntil = 0;
+unsigned long navMoveUntil = 0;
+unsigned long navSegmentNumber = 0;
+
+
+void updateTwinNavigationState() {
+
+  long leftDistance;
+  long rightDistance;
+
+  readSensors(leftDistance, rightDistance);
+
+  bool navigationActive = autoMode || manualForwardMode;
+
+  if (!navigationActive) {
+    twinNavState = "MANUAL";
+    twinRerouteSide = "NONE";
+    twinRouteInfo = "Waiting for movement command";
+    return;
+  }
+
+  // Right obstacle -> physical robot reroutes to LEFT.
+  if (rightDistance <= OBSTACLE_DISTANCE &&
+      leftDistance > OBSTACLE_DISTANCE) {
+
+    twinRerouteSide = "LEFT";
+
+    if (motorStatus == "LEFT") {
+      twinNavState = "REROUTING";
+      twinRouteInfo = "RIGHT OBSTACLE -> STOP -> LEFT SIDE -> RESUME";
+    }
+    else {
+      twinNavState = "OBSTACLE DETECTED";
+      twinRouteInfo = "RIGHT OBSTACLE -> ALTERNATE SIDE: LEFT";
+    }
+
+    return;
+  }
+
+  // Left obstacle -> physical robot reroutes to RIGHT.
+  if (leftDistance <= OBSTACLE_DISTANCE &&
+      rightDistance > OBSTACLE_DISTANCE) {
+
+    twinRerouteSide = "RIGHT";
+
+    if (motorStatus == "RIGHT") {
+      twinNavState = "REROUTING";
+      twinRouteInfo = "LEFT OBSTACLE -> STOP -> RIGHT SIDE -> RESUME";
+    }
+    else {
+      twinNavState = "OBSTACLE DETECTED";
+      twinRouteInfo = "LEFT OBSTACLE -> ALTERNATE SIDE: RIGHT";
+    }
+
+    return;
+  }
+
+  // Both sides blocked -> reverse, then choose the side with more space.
+  if (leftDistance <= OBSTACLE_DISTANCE &&
+      rightDistance <= OBSTACLE_DISTANCE) {
+
+    twinRerouteSide = "SELECTING";
+
+    if (motorStatus == "BACKWARD") {
+      twinNavState = "REROUTING";
+      twinRouteInfo = "BOTH BLOCKED -> REVERSE -> SELECT OPEN SIDE";
+    }
+    else {
+      twinNavState = "OBSTACLE DETECTED";
+      twinRouteInfo = "BOTH SIDES BLOCKED -> REVERSE + SELECT OPEN SIDE";
+    }
+
+    return;
+  }
+
+  // No obstacle.
+  twinRerouteSide = "NONE";
+
+  if (motorStatus == "FORWARD") {
+    twinNavState = "MOVING FORWARD";
+    twinRouteInfo = "PATH CLEAR -> FORWARD";
+  }
+  else if (motorStatus == "LEFT") {
+    twinNavState = "TURNING LEFT";
+    twinRouteInfo = "LEFT TURN";
+  }
+  else if (motorStatus == "RIGHT") {
+    twinNavState = "TURNING RIGHT";
+    twinRouteInfo = "RIGHT TURN";
+  }
+  else if (motorStatus == "BACKWARD") {
+    twinNavState = "REVERSING";
+    twinRouteInfo = "REVERSING";
+  }
+  else {
+    twinNavState = "STOPPED";
+    twinRouteInfo = "Waiting for movement";
+  }
+}
+
+void sendTwinTelemetry() {
+
+  if (!mqtt.connected()) {
+    return;
+  }
+
+  long leftDistance;
+  long rightDistance;
+  readSensors(leftDistance, rightDistance);
+
+  bool obstacle =
+    (leftDistance <= OBSTACLE_DISTANCE ||
+     rightDistance <= OBSTACLE_DISTANCE);
+
+  String message = "{";
+
+  message += "\"amr\":\"AMR-01\",";
+  message += "\"physical\":true,";
+  message += "\"distanceLeft\":" + String(leftDistance) + ",";
+  message += "\"distanceRight\":" + String(rightDistance) + ",";
+  message += "\"obstacle\":" + String(obstacle ? "true" : "false") + ",";
+  message += "\"motor\":\"" + motorStatus + "\",";
+  message += "\"autoMode\":" + String(autoMode ? "true" : "false") + ",";
+  message += "\"task\":\"" + currentTask + "\",";
+  message += "\"navState\":\"" + twinNavState + "\",";
+  message += "\"rerouteSide\":\"" + twinRerouteSide + "\",";
+  message += "\"routeInfo\":\"" + twinRouteInfo + "\"";
+
+  message += "}";
+
+  mqtt.publish(TELEMETRY_TOPIC.c_str(), message.c_str());
+
+  Serial.print("TWIN TELEMETRY -> ");
+  Serial.println(message);
+}
+
+
+
+// =====================================================
+// MOTOR STOP
+// =====================================================
+
+void stopMotors() {
+
+  digitalWrite(LEFT_IN1, LOW);
+  digitalWrite(LEFT_IN2, LOW);
+
+  digitalWrite(RIGHT_IN1, LOW);
+  digitalWrite(RIGHT_IN2, LOW);
+
+  motorStatus = "STOP";
+
+  Serial.println("MOTORS: STOP");
+}
+
+
+// =====================================================
+// FORWARD
+// =====================================================
+
+void moveForward() {
+
+  digitalWrite(LEFT_IN1, HIGH);
+  digitalWrite(LEFT_IN2, LOW);
+
+  digitalWrite(RIGHT_IN1, HIGH);
+  digitalWrite(RIGHT_IN2, LOW);
+
+  motorStatus = "FORWARD";
+
+  Serial.println("MOTORS: FORWARD");
+}
+
+
+// =====================================================
+// BACKWARD
+// =====================================================
+
+void moveBackward() {
+
+  digitalWrite(LEFT_IN1, LOW);
+  digitalWrite(LEFT_IN2, HIGH);
+
+  digitalWrite(RIGHT_IN1, LOW);
+  digitalWrite(RIGHT_IN2, HIGH);
+
+  motorStatus = "BACKWARD";
+
+  Serial.println("MOTORS: BACKWARD");
+}
+
+
+// =====================================================
+// LEFT
+// =====================================================
+
+void turnLeft() {
+
+  digitalWrite(LEFT_IN1, LOW);
+  digitalWrite(LEFT_IN2, HIGH);
+
+  digitalWrite(RIGHT_IN1, HIGH);
+  digitalWrite(RIGHT_IN2, LOW);
+
+  motorStatus = "LEFT";
+
+  Serial.println("MOTORS: LEFT");
+}
+
+
+// =====================================================
+// RIGHT
+// =====================================================
+
+void turnRight() {
+
+  digitalWrite(LEFT_IN1, HIGH);
+  digitalWrite(LEFT_IN2, LOW);
+
+  digitalWrite(RIGHT_IN1, LOW);
+  digitalWrite(RIGHT_IN2, HIGH);
+
+  motorStatus = "RIGHT";
+
+  Serial.println("MOTORS: RIGHT");
+}
+
+
+// =====================================================
+// ULTRASONIC DISTANCE
+// =====================================================
+
+long getDistance(int trigPin, int echoPin) {
+
+  digitalWrite(trigPin, LOW);
+  delayMicroseconds(2);
+
+  digitalWrite(trigPin, HIGH);
+  delayMicroseconds(10);
+
+  digitalWrite(trigPin, LOW);
+
+  long duration = pulseIn(echoPin, HIGH, 30000);
+
+  if (duration == 0) {
+    return 999;
+  }
+
+  long distance = duration * 0.0343 / 2;
+
+  return distance;
+}
+
+
+// =====================================================
+// READ BOTH SENSORS
+// =====================================================
+
+void readSensors(long &leftDistance, long &rightDistance) {
+
+  // SENSOR 1 = RIGHT
+  rightDistance = getDistance(TRIG1, ECHO1);
+
+  delay(5);
+
+  // SENSOR 2 = LEFT
+  leftDistance = getDistance(TRIG2, ECHO2);
+}
+
+
+// =====================================================
+// OBSTACLE CHECK
+// =====================================================
+
+bool obstacleDetected() {
+
+  long distance1;
+  long distance2;
+
+  readSensors(distance1, distance2);
+
+  Serial.print("Sensor 1: ");
+  Serial.print(distance1);
+  Serial.print(" cm | Sensor 2: ");
+  Serial.print(distance2);
+  Serial.println(" cm");
+
+  if (distance1 <= OBSTACLE_DISTANCE ||
+      distance2 <= OBSTACLE_DISTANCE) {
+
+    return true;
+  }
+
+  return false;
+}
+
+
+// =====================================================
+// SEND STATUS
+// =====================================================
+
+void sendStatus(String status) {
+
+  if (!mqtt.connected()) {
+    return;
+  }
+
+  String message = "{";
+
+  message += "\"amr\":\"AMR-01\",";
+  message += "\"status\":\"" + status + "\",";
+  message += "\"autoMode\":" + String(autoMode ? "true" : "false") + ",";
+  message += "\"manualForward\":" +
+             String(manualForwardMode ? "true" : "false") + ",";
+  message += "\"task\":\"" + currentTask + "\"";
+
+  message += "}";
+
+  mqtt.publish(STATUS_TOPIC.c_str(), message.c_str());
+
+  Serial.print("STATUS → ");
+  Serial.println(message);
+}
+
+
+// =====================================================
+// SEND TELEMETRY
+// =====================================================
+
+void sendTelemetry() {
+
+  if (!mqtt.connected()) {
+    return;
+  }
+
+  long distance1;
+  long distance2;
+
+  readSensors(distance1, distance2);
+
+  bool obstacle =
+    (distance1 <= OBSTACLE_DISTANCE ||
+     distance2 <= OBSTACLE_DISTANCE);
+
+  String message = "{";
+
+  message += "\"amr\":\"AMR-01\",";
+  message += "\"distance1\":" + String(distance1) + ",";
+  message += "\"distance2\":" + String(distance2) + ",";
+  message += "\"obstacle\":" +
+             String(obstacle ? "true" : "false") + ",";
+  message += "\"motor\":\"" + motorStatus + "\",";
+  message += "\"autoMode\":" +
+             String(autoMode ? "true" : "false") + ",";
+  message += "\"manualForward\":" +
+             String(manualForwardMode ? "true" : "false") + ",";
+  message += "\"task\":\"" + currentTask + "\"";
+
+  message += "}";
+
+  mqtt.publish(TELEMETRY_TOPIC.c_str(), message.c_str());
+
+  Serial.print("TELEMETRY → ");
+  Serial.println(message);
+}
+
+
+// =====================================================
+// SMART FORWARD NAVIGATION
+// =====================================================
+// This function is used for:
+//
+// 1. Manual FORWARD
+// 2. AUTO MODE
+//
+// =====================================================
+
+void smartForwardNavigation() {
+
+  long leftDistance;
+  long rightDistance;
+
+  readSensors(leftDistance, rightDistance);
+
+
+  Serial.println();
+  Serial.println("================================");
+  Serial.println("SMART OBSTACLE NAVIGATION");
+  Serial.println("================================");
+
+  Serial.print("LEFT  : ");
+  Serial.print(leftDistance);
+  Serial.println(" cm");
+
+  Serial.print("RIGHT : ");
+  Serial.print(rightDistance);
+  Serial.println(" cm");
+
+
+  // ===================================================
+  // BOTH SIDES CLEAR
+  // ===================================================
+
+  if (leftDistance > OBSTACLE_DISTANCE &&
+      rightDistance > OBSTACLE_DISTANCE) {
+
+    Serial.println("PATH CLEAR → FORWARD");
+
+    moveForward();
+  }
+
+
+  // ===================================================
+  // LEFT BLOCKED
+  // RIGHT CLEAR
+  // ===================================================
+
+  else if (leftDistance <= OBSTACLE_DISTANCE &&
+           rightDistance > OBSTACLE_DISTANCE) {
+
+    Serial.println("LEFT OBSTACLE → STOP");
+    Serial.println("RIGHT SIDE CLEAR → TURN RIGHT");
+
+    stopMotors();
+
+    delay(150);
+
+    turnRight();
+
+    delay(500);
+
+    stopMotors();
+
+    delay(100);
+
+    Serial.println("RIGHT TURN COMPLETE");
+  }
+
+
+  // ===================================================
+  // RIGHT BLOCKED
+  // LEFT CLEAR
+  // ===================================================
+
+  else if (rightDistance <= OBSTACLE_DISTANCE &&
+           leftDistance > OBSTACLE_DISTANCE) {
+
+    Serial.println("RIGHT OBSTACLE → STOP");
+    Serial.println("LEFT SIDE CLEAR → TURN LEFT");
+
+    stopMotors();
+
+    delay(150);
+
+    turnLeft();
+
+    delay(500);
+
+    stopMotors();
+
+    delay(100);
+
+    Serial.println("LEFT TURN COMPLETE");
+  }
+
+
+  // ===================================================
+  // BOTH SIDES BLOCKED
+  // ===================================================
+
+  else {
+
+    Serial.println("BOTH SIDES BLOCKED");
+    Serial.println("→ STOP");
+    Serial.println("→ REVERSE");
+
+    stopMotors();
+
+    delay(150);
+
+    moveBackward();
+
+    delay(500);
+
+    stopMotors();
+
+    delay(150);
+
+
+    // -----------------------------------------------
+    // Check both sides again after reversing
+    // -----------------------------------------------
+
+    leftDistance = getDistance(TRIG1, ECHO1);
+
+    delay(5);
+
+    rightDistance = getDistance(TRIG2, ECHO2);
+
+
+    Serial.println("AFTER REVERSE:");
+
+    Serial.print("LEFT  : ");
+    Serial.print(leftDistance);
+    Serial.println(" cm");
+
+    Serial.print("RIGHT : ");
+    Serial.print(rightDistance);
+    Serial.println(" cm");
+
+
+    // =================================================
+    // MORE SPACE LEFT
+    // =================================================
+
+    if (leftDistance > rightDistance &&
+        leftDistance > OBSTACLE_DISTANCE) {
+
+      Serial.println("MORE SPACE LEFT → TURN LEFT");
+
+      turnLeft();
+
+      delay(600);
+
+      stopMotors();
+
+      delay(100);
+    }
+
+
+    // =================================================
+    // MORE SPACE RIGHT
+    // =================================================
+
+    else if (rightDistance > leftDistance &&
+             rightDistance > OBSTACLE_DISTANCE) {
+
+      Serial.println("MORE SPACE RIGHT → TURN RIGHT");
+
+      turnRight();
+
+      delay(600);
+
+      stopMotors();
+
+      delay(100);
+    }
+
+
+    // =================================================
+    // NO SAFE SIDE
+    // =================================================
+
+    else {
+
+      Serial.println("NO SAFE SIDE");
+      Serial.println("ROBOT REMAINS STOPPED");
+
+      stopMotors();
+    }
+  }
+}
+
+
+// =====================================================
+// DIGITAL TWIN NAVIGATION HELPERS
+// =====================================================
+String jsonStringValue(const String& text, const String& key) {
+  String token = "\"" + key + "\":";
+  int p = text.indexOf(token);
+  if (p < 0) return "";
+  p += token.length();
+  while (p < (int)text.length() && text[p] == ' ') p++;
+  if (p >= (int)text.length() || text[p] != '"') return "";
+  int q = text.indexOf('"', p + 1);
+  if (q < 0) return "";
+  return text.substring(p + 1, q);
+}
+
+long jsonLongValue(const String& text, const String& key, long fallback=0) {
+  String token = "\"" + key + "\":";
+  int p = text.indexOf(token);
+  if (p < 0) return fallback;
+  p += token.length();
+  while (p < (int)text.length() && text[p] == ' ') p++;
+  int q = p;
+  while (q < (int)text.length() && (isDigit(text[q]) || text[q]=='-')) q++;
+  if (q == p) return fallback;
+  return text.substring(p, q).toInt();
+}
+
+void startTwinNavSegment(const String& command) {
+  navHeading = jsonStringValue(command, "heading");
+  navTurn = jsonStringValue(command, "turn");
+  long turnMs = jsonLongValue(command, "turnMs", 0);
+  long moveMs = jsonLongValue(command, "moveMs", 0);
+  navSegmentNumber = jsonLongValue(command, "segment", 0);
+
+  if (navHeading == "") navHeading = "E";
+  if (moveMs < 100) moveMs = 100;
+
+  stopMotors();
+  navSegmentActive = true;
+
+  if (navTurn == "LEFT") {
+    turnLeft();
+    navTurnUntil = millis() + (unsigned long)turnMs;
+    navMoveUntil = navTurnUntil + (unsigned long)moveMs;
+  }
+  else if (navTurn == "RIGHT") {
+    turnRight();
+    navTurnUntil = millis() + (unsigned long)turnMs;
+    navMoveUntil = navTurnUntil + (unsigned long)moveMs;
+  }
+  else if (navTurn == "UTURN") {
+    turnRight();
+    navTurnUntil = millis() + (unsigned long)(turnMs * 2);
+    navMoveUntil = navTurnUntil + (unsigned long)moveMs;
+  }
+  else {
+    navTurnUntil = millis();
+    navMoveUntil = millis() + (unsigned long)moveMs;
+    moveForward();
+  }
+
+  autoMode = false;
+  manualForwardMode = false;
+
+  Serial.print("TWIN ROUTE SEGMENT ");
+  Serial.print(navSegmentNumber);
+  Serial.print(" | HEADING=");
+  Serial.print(navHeading);
+  Serial.print(" | TURN=");
+  Serial.print(navTurn);
+  Serial.print(" | MOVE=");
+  Serial.println(moveMs);
+
+  sendStatus("TWIN_ROUTE_SEGMENT_STARTED");
+}
+
+void updateTwinNavSegment() {
+  if (!navSegmentActive) return;
+
+  unsigned long now = millis();
+
+  // During a turn, do not start forward movement yet.
+  if (navTurn != "NONE" && now < navTurnUntil) {
+    return;
+  }
+
+  // Start forward motion immediately after the turn.
+  if (navTurn != "NONE" && now >= navTurnUntil && now < navMoveUntil) {
+    long leftDistance, rightDistance;
+    readSensors(leftDistance, rightDistance);
+
+    // Local safety layer: stop instead of blindly following the route.
+    if (leftDistance <= OBSTACLE_DISTANCE || rightDistance <= OBSTACLE_DISTANCE) {
+      stopMotors();
+      sendStatus("TWIN_ROUTE_OBSTACLE_STOP");
+      return;
+    }
+
+    moveForward();
+    navTurn = "NONE";
+    return;
+  }
+
+  // Forward segment safety check.
+  if (now < navMoveUntil) {
+    long leftDistance, rightDistance;
+    readSensors(leftDistance, rightDistance);
+    if (leftDistance <= OBSTACLE_DISTANCE || rightDistance <= OBSTACLE_DISTANCE) {
+      stopMotors();
+      sendStatus("TWIN_ROUTE_OBSTACLE_STOP");
+      return;
+    }
+    moveForward();
+    return;
+  }
+
+  stopMotors();
+  navSegmentActive = false;
+  sendStatus("TWIN_ROUTE_SEGMENT_COMPLETE");
+}
+
+// =====================================================
+// MQTT CALLBACK
+// =====================================================
+
+void mqttCallback(char* topic,
+                  byte* payload,
+                  unsigned int length) {
+
+  String command = "";
+
+  for (unsigned int i = 0; i < length; i++) {
+    command += (char)payload[i];
+  }
+
+
+  Serial.println();
+  Serial.println("==============================");
+  Serial.println("MQTT COMMAND RECEIVED");
+  Serial.println(command);
+  Serial.println("==============================");
+
+
+  // ===================================================
+  // DIGITAL TWIN ROUTE SEGMENT
+  // ===================================================
+  if (command.indexOf("NAV_SEGMENT") >= 0) {
+    startTwinNavSegment(command);
+    return;
+  }
+
+  // ===================================================
+  // AUTO STOP
+  // IMPORTANT:
+  // Check AUTO_STOP BEFORE generic STOP
+  // ===================================================
+
+  if (command.indexOf("AUTO_STOP") >= 0) {
+
+    navSegmentActive = false;
+    autoMode = false;
+    manualForwardMode = false;
+
+    stopMotors();
+
+    Serial.println("AUTO MODE: OFF");
+
+    sendStatus("AUTO_MODE_STOPPED");
+
+    return;
+  }
+
+
+  // ===================================================
+  // EMERGENCY STOP
+  // ===================================================
+
+  if (command == "STOP" ||
+      command.indexOf("\"STOP\"") >= 0) {
+
+    navSegmentActive = false;
+    autoMode = false;
+    manualForwardMode = false;
+
+    stopMotors();
+
+    Serial.println("EMERGENCY STOP");
+
+    sendStatus("STOPPED");
+
+    return;
+  }
+
+
+  // ===================================================
+  // AUTO START
+  // ===================================================
+
+  if (command.indexOf("AUTO_START") >= 0) {
+
+    autoMode = true;
+
+    manualForwardMode = false;
+
+    stopMotors();
+
+    Serial.println("AUTO MODE: ON");
+
+    sendStatus("AUTO_MODE_STARTED");
+
+    return;
+  }
+
+
+  // ===================================================
+  // AUTO TASK
+  // ===================================================
+
+  if (command.indexOf("AUTO_TASK") >= 0) {
+
+    if (command.indexOf("DELIVER_FULL_BIN") >= 0) {
+
+      currentTask = "DELIVER_FULL_BIN";
+
+    }
+
+    else if (command.indexOf("RESTOCK_EMPTY_BIN") >= 0) {
+
+      currentTask = "RESTOCK_EMPTY_BIN";
+    }
+
+
+    Serial.print("AUTO TASK: ");
+    Serial.println(currentTask);
+
+    sendStatus("TASK_ASSIGNED");
+
+    return;
+  }
+
+
+  // ===================================================
+  // MANUAL FORWARD
+  // ===================================================
+
+  if (command.indexOf("FORWARD") >= 0) {
+
+    autoMode = false;
+
+    manualForwardMode = true;
+
+    Serial.println("MANUAL FORWARD MODE: ON");
+
+    sendStatus("MOVING_FORWARD");
+
+    return;
+  }
+
+
+  // ===================================================
+  // MANUAL BACKWARD
+  // ===================================================
+
+  if (command.indexOf("BACKWARD") >= 0) {
+
+    autoMode = false;
+
+    manualForwardMode = false;
+
+    moveBackward();
+
+    sendStatus("MOVING_BACKWARD");
+
+    return;
+  }
+
+
+  // ===================================================
+  // MANUAL LEFT
+  // ===================================================
+
+  if (command.indexOf("LEFT") >= 0) {
+
+    autoMode = false;
+
+    manualForwardMode = false;
+
+    turnLeft();
+
+    sendStatus("TURNING_LEFT");
+
+    return;
+  }
+
+
+  // ===================================================
+  // MANUAL RIGHT
+  // ===================================================
+
+  if (command.indexOf("RIGHT") >= 0) {
+
+    autoMode = false;
+
+    manualForwardMode = false;
+
+    turnRight();
+
+    sendStatus("TURNING_RIGHT");
+
+    return;
+  }
+}
+
+
+// =====================================================
+// CONNECT TO WIFI
+// =====================================================
+
+void connectWiFi() {
+
+  Serial.println();
+  Serial.println("Connecting to WiFi...");
+
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+
+  while (WiFi.status() != WL_CONNECTED) {
+
+    delay(500);
+
+    Serial.print(".");
+  }
+
+  Serial.println();
+
+  Serial.println("WiFi CONNECTED");
+
+  Serial.print("ESP32 IP: ");
+  Serial.println(WiFi.localIP());
+}
+
+
+// =====================================================
+// CONNECT MQTT
+// =====================================================
+
+void connectMQTT() {
+
+  while (!mqtt.connected()) {
+
+    Serial.println("Connecting to MQTT...");
+
+
+    String clientID =
+      "ESP32-AMR01-" +
+      String((uint32_t)ESP.getEfuseMac(), HEX);
+
+
+    if (mqtt.connect(clientID.c_str())) {
+
+      Serial.println("MQTT CONNECTED");
+
+
+      mqtt.subscribe(COMMAND_TOPIC.c_str());
+
+
+      Serial.print("Subscribed: ");
+      Serial.println(COMMAND_TOPIC);
+
+
+      sendStatus("ONLINE");
+    }
+
+
+    else {
+
+      Serial.print("MQTT failed, state = ");
+
+      Serial.println(mqtt.state());
+
+      delay(3000);
+    }
+  }
+}
+
+
+// =====================================================
+// SETUP
+// =====================================================
+
+void setup() {
+
+  Serial.begin(115200);
+
+
+  // ===================================================
+  // MOTOR PINS
+  // ===================================================
+
+  pinMode(LEFT_IN1, OUTPUT);
+  pinMode(LEFT_IN2, OUTPUT);
+
+  pinMode(RIGHT_IN1, OUTPUT);
+  pinMode(RIGHT_IN2, OUTPUT);
+
+
+  // ===================================================
+  // ULTRASONIC PINS
+  // ===================================================
+
+  pinMode(TRIG1, OUTPUT);
+  pinMode(ECHO1, INPUT);
+
+  pinMode(TRIG2, OUTPUT);
+  pinMode(ECHO2, INPUT);
+
+
+  // ===================================================
+  // INITIAL STATES
+  // ===================================================
+
+  autoMode = false;
+
+  manualForwardMode = false;
+
+  currentTask = "NONE";
+
+  motorStatus = "STOP";
+
+
+  // ===================================================
+  // VERY IMPORTANT
+  // FORCE MOTORS OFF AT STARTUP
+  // ===================================================
+
+  stopMotors();
+
+
+  Serial.println();
+  Serial.println("==============================");
+  Serial.println("SMART WAREHOUSE AMR");
+  Serial.println("ESP32 + MQTT + 2 HC-SR04");
+  Serial.println("SMART OBSTACLE NAVIGATION");
+  Serial.println("==============================");
+
+
+  // ===================================================
+  // WIFI
+  // ===================================================
+
+  connectWiFi();
+
+
+  // ===================================================
+  // MQTT
+  // ===================================================
+
+  mqtt.setServer(MQTT_SERVER, MQTT_PORT);
+
+  mqtt.setCallback(mqttCallback);
+
+  connectMQTT();
+
+
+  // ===================================================
+  // FINAL SAFETY STOP
+  // ===================================================
+
+  stopMotors();
+}
+
+
+// =====================================================
+// LOOP
+// =====================================================
+
+void loop() {
+
+
+  // ===================================================
+  // MQTT CONNECTION
+  // ===================================================
+
+  if (!mqtt.connected()) {
+
+    connectMQTT();
+  }
+
+
+  // ===================================================
+  // PROCESS MQTT
+  // ===================================================
+
+  mqtt.loop();
+
+  // Execute route segments issued by the Digital Twin.
+  updateTwinNavSegment();
+
+  // ===================================================
+  // MANUAL FORWARD MODE
+  // ===================================================
+  //
+  // Dashboard FORWARD activates this mode.
+  //
+  // The robot continuously checks both sensors.
+  //
+  // ===================================================
+
+  if (manualForwardMode) {
+
+    smartForwardNavigation();
+
+    delay(100);
+  }
+
+
+  // ===================================================
+  // AUTO MODE
+  // ===================================================
+
+  if (autoMode) {
+
+    smartForwardNavigation();
+
+    delay(100);
+  }
+
+
+  // ===================================================
+  // PHYSICAL DIGITAL TWIN STATE
+  // ===================================================
+
+  updateTwinNavigationState();
+
+  if (millis() - lastTwinTelemetry >= 300) {
+
+    lastTwinTelemetry = millis();
+
+    sendTwinTelemetry();
+  }
+
+
+  // ===================================================
+  // TELEMETRY EVERY 1 SECOND
+  // ===================================================
+
+  if (millis() - lastTelemetry >= 1000) {
+
+    lastTelemetry = millis();
+
+    sendTelemetry();
+  }
+
+
+  // ===================================================
+  // SMALL LOOP DELAY
+  // ===================================================
+
+  delay(20);
+}

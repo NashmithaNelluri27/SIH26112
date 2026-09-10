@@ -1,0 +1,4056 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+
+<meta charset="UTF-8">
+
+<meta name="viewport"
+      content="width=device-width,
+               initial-scale=1.0">
+
+<title>
+Smart Warehouse AMR Control & Digital Twin
+</title>
+
+<script src="https://unpkg.com/mqtt@5.10.4/dist/mqtt.min.js"></script>
+
+<style>
+
+*{
+    box-sizing:border-box;
+    margin:0;
+    padding:0;
+}
+
+body{
+    font-family:Arial,Helvetica,sans-serif;
+    background:#eef2f7;
+    color:#172033;
+}
+
+.header{
+    min-height:62px;
+    background:#101827;
+    color:white;
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    padding:12px 20px;
+    font-size:18px;
+    font-weight:bold;
+}
+
+.mode-badge{
+    background:#16a34a;
+    padding:8px 15px;
+    border-radius:20px;
+    font-size:11px;
+}
+
+.container{
+    padding:15px;
+}
+
+.dashboard{
+    display:grid;
+    grid-template-columns:minmax(600px,2.1fr)
+                         minmax(330px,1fr);
+    gap:15px;
+}
+
+.card{
+    background:white;
+    border-radius:12px;
+    padding:15px;
+    margin-bottom:15px;
+    box-shadow:0 3px 12px rgba(0,0,0,.08);
+}
+
+.card-title{
+    font-size:14px;
+    font-weight:bold;
+    margin-bottom:10px;
+}
+
+/* =========================================================
+   WAREHOUSE
+========================================================= */
+
+.warehouse{
+    position:relative;
+    width:100%;
+    height:720px;
+    overflow:hidden;
+    border:1px solid #aab5c5;
+    border-radius:10px;
+
+    background:
+      linear-gradient(#e4e9ef 1px,
+                      transparent 1px),
+      linear-gradient(90deg,#e4e9ef 1px,
+                      transparent 1px);
+
+    background-size:12.5% 12.5%;
+}
+
+/* =========================================================
+   ROADS
+========================================================= */
+
+.route{
+    position:absolute;
+    z-index:1;
+    border-radius:20px;
+    opacity:.7;
+}
+
+.horizontal{
+    left:2%;
+    width:96%;
+    height:20px;
+}
+
+.vertical{
+    top:5%;
+    height:90%;
+    width:20px;
+}
+
+.route-a{
+    top:20%;
+    background:#cbd5e1;
+}
+
+.route-b{
+    top:50%;
+    background:#7db9f5;
+}
+
+.route-c{
+    top:80%;
+    background:#7ee6a9;
+}
+
+.route-v1{
+    left:26%;
+    background:#f5d878;
+}
+
+.route-v2{
+    left:51%;
+    background:#b8a7f5;
+}
+
+.route-v3{
+    left:72%;
+    background:#f3a0a0;
+}
+
+.route-label{
+    position:absolute;
+    z-index:3;
+    font-size:8px;
+    font-weight:bold;
+    color:#64748b;
+}
+
+/* =========================================================
+   RACKS
+========================================================= */
+
+.rack{
+    position:absolute;
+    width:118px;
+    height:86px;
+    background:#475569;
+    border-radius:7px;
+    z-index:6;
+    padding:8px;
+    text-align:center;
+}
+
+.rack-title{
+    color:white;
+    font-size:10px;
+    font-weight:bold;
+    margin-bottom:8px;
+}
+
+.bin{
+    width:60px;
+    height:38px;
+    margin:auto;
+    border-radius:6px;
+
+    display:flex;
+    align-items:center;
+    justify-content:center;
+
+    color:white;
+    font-size:9px;
+    font-weight:bold;
+}
+
+.bin.full{
+    background:#16a34a;
+}
+
+.bin.empty{
+    background:#94a3b8;
+}
+
+.bin.transport{
+    background:#2196f3;
+}
+
+.bin.restocking{
+    background:#f59e0b;
+    color:#222;
+}
+
+.rack1{
+    left:5%;
+    top:4%;
+}
+
+.rack2{
+    left:5%;
+    top:34%;
+}
+
+.rack3{
+    left:5%;
+    top:64%;
+}
+
+.rack4{
+    left:36%;
+    top:4%;
+}
+
+.rack5{
+    left:36%;
+    top:34%;
+}
+
+.rack6{
+    left:36%;
+    top:64%;
+}
+
+/* =========================================================
+   STATIONS
+========================================================= */
+
+.station{
+    position:absolute;
+    width:110px;
+    height:65px;
+    z-index:6;
+
+    border-radius:9px;
+
+    display:flex;
+    flex-direction:column;
+    justify-content:center;
+    align-items:center;
+
+    text-align:center;
+    font-size:10px;
+    font-weight:bold;
+}
+
+.delivery{
+    left:76%;
+    top:4%;
+    background:#e8f2ff;
+    border:1px solid #3b82f6;
+    color:#1661c5;
+}
+
+.pickup{
+    left:76%;
+    top:38%;
+    background:#fff7d6;
+    border:1px solid #f2b900;
+    color:#a87500;
+}
+
+.charging{
+    left:76%;
+    top:70%;
+    background:#e4faec;
+    border:1px solid #25a65a;
+    color:#16823f;
+}
+
+/* =========================================================
+   AMR
+========================================================= */
+
+.amr{
+    position:absolute;
+
+    width:50px;
+    height:34px;
+
+    background:#101827;
+    color:white;
+
+    border:2px solid #22c55e;
+    border-radius:8px;
+
+    z-index:20;
+
+    display:flex;
+    justify-content:center;
+    align-items:center;
+
+    font-size:8px;
+    font-weight:bold;
+
+    transition:
+      left .25s linear,
+      top .25s linear;
+}
+
+.amr.physical{
+    border-color:#2563eb;
+    box-shadow:0 0 14px
+      rgba(37,99,235,.7);
+}
+
+.amr.physical::after{
+    content:"PHYSICAL";
+
+    position:absolute;
+    top:-16px;
+
+    background:#2563eb;
+    color:white;
+
+    padding:2px 5px;
+    border-radius:4px;
+
+    font-size:6px;
+}
+
+/* =========================================================
+   OBSTACLE
+========================================================= */
+
+.obstacle{
+    position:absolute;
+
+    width:48px;
+    height:22px;
+
+    background:#dc2626;
+    border:3px solid #991b1b;
+
+    border-radius:4px;
+
+    z-index:30;
+
+    color:white;
+    font-size:7px;
+    font-weight:bold;
+
+    display:flex;
+    justify-content:center;
+    align-items:center;
+
+    box-shadow:0 0 12px
+      rgba(220,38,38,.7);
+}
+
+/* =========================================================
+   STATUS
+========================================================= */
+
+.status-grid{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:8px;
+}
+
+.status-box{
+    border:1px solid #dbe2ea;
+    padding:10px;
+    border-radius:7px;
+}
+
+.status-label{
+    font-size:8px;
+    color:#64748b;
+}
+
+.status-value{
+    font-size:18px;
+    font-weight:bold;
+    margin-top:3px;
+}
+
+/* =========================================================
+   BUTTONS
+========================================================= */
+
+button{
+    border:0;
+    border-radius:6px;
+    padding:8px;
+    cursor:pointer;
+    font-size:9px;
+    font-weight:bold;
+}
+
+button:hover{
+    opacity:.88;
+}
+
+.start-btn{
+    background:#16a34a;
+    color:white;
+}
+
+.stop-btn{
+    background:#111827;
+    color:white;
+}
+
+.auto-btn{
+    background:#2563eb;
+    color:white;
+}
+
+.swarm-btn{
+    background:#7c3aed;
+    color:white;
+}
+
+.reset-btn{
+    background:#64748b;
+    color:white;
+}
+
+.control-row{
+    display:flex;
+    gap:6px;
+    margin-top:8px;
+}
+
+.control-row button{
+    flex:1;
+}
+
+/* =========================================================
+   FLEET
+========================================================= */
+
+.amr-card{
+    border:1px solid #dce3ec;
+    border-radius:8px;
+    padding:9px;
+    margin-bottom:8px;
+}
+
+.amr-header{
+    display:flex;
+    justify-content:space-between;
+    font-size:11px;
+    font-weight:bold;
+}
+
+.battery-bar{
+    height:7px;
+    background:#e2e8f0;
+    border-radius:10px;
+    overflow:hidden;
+    margin-top:7px;
+}
+
+.battery-fill{
+    height:100%;
+    background:#16a34a;
+    transition:.3s;
+}
+
+.task-text{
+    font-size:9px;
+    color:#64748b;
+    margin-top:5px;
+}
+
+/* =========================================================
+   EDGE AI
+========================================================= */
+
+.ai-box{
+    border:1px solid #b8d5ff;
+    background:#f2f7ff;
+    border-radius:8px;
+    padding:10px;
+    margin-bottom:7px;
+}
+
+.ai-head{
+    display:flex;
+    justify-content:space-between;
+    font-size:10px;
+    font-weight:bold;
+}
+
+.ai-state{
+    color:#2563eb;
+}
+
+.ai-state.alert{
+    color:#dc2626;
+}
+
+.ai-state.route{
+    color:#d97706;
+}
+
+.ai-detail{
+    margin-top:5px;
+    font-size:9px;
+    color:#475569;
+}
+
+.ai-command{
+    margin-top:6px;
+    padding:6px;
+    background:#e8eef7;
+    border-radius:5px;
+    font-size:8px;
+    font-weight:bold;
+}
+
+.ai-command.alert{
+    background:#fee2e2;
+    color:#b91c1c;
+}
+
+.ai-command.route{
+    background:#ffedd5;
+    color:#b45309;
+}
+
+/* =========================================================
+   INVENTORY
+========================================================= */
+
+.inventory-row{
+    display:flex;
+    justify-content:space-between;
+    padding:6px 0;
+    border-bottom:1px solid #edf1f5;
+    font-size:9px;
+}
+
+.full{
+    color:#16a34a;
+    font-weight:bold;
+}
+
+.empty{
+    color:#64748b;
+    font-weight:bold;
+}
+
+.transport{
+    color:#2196f3;
+    font-weight:bold;
+}
+
+/* =========================================================
+   MQTT
+========================================================= */
+
+.mqtt-status{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    font-size:10px;
+    font-weight:bold;
+}
+
+.cloud-dot{
+    display:inline-block;
+    width:9px;
+    height:9px;
+    border-radius:50%;
+    background:#94a3b8;
+    margin-right:5px;
+}
+
+.cloud-dot.connected{
+    background:#16a34a;
+}
+
+.cloud-dot.error{
+    background:#dc2626;
+}
+
+.input{
+    width:100%;
+    padding:8px;
+    border:1px solid #dbe2ea;
+    border-radius:6px;
+    margin-top:7px;
+    font-size:9px;
+}
+
+.mqtt-buttons{
+    display:flex;
+    gap:6px;
+    margin-top:7px;
+}
+
+.mqtt-buttons button{
+    flex:1;
+}
+
+.connect{
+    background:#16a34a;
+    color:white;
+}
+
+.disconnect{
+    background:#dc2626;
+    color:white;
+}
+
+/* =========================================================
+   PHYSICAL CONTROLS
+========================================================= */
+
+.physical-controls{
+    display:grid;
+    grid-template-columns:repeat(3,1fr);
+    gap:5px;
+    margin-top:8px;
+}
+
+.physical-main{
+    background:#2563eb;
+    color:white;
+}
+
+.physical-stop{
+    background:#111827;
+    color:white;
+}
+
+.physical-data{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:5px;
+    margin-top:8px;
+}
+
+.physical-data div{
+    background:#f8fafc;
+    border:1px solid #e2e8f0;
+    border-radius:6px;
+    padding:6px;
+}
+
+.physical-data small{
+    display:block;
+    font-size:7px;
+    color:#64748b;
+}
+
+.physical-data b{
+    font-size:9px;
+}
+
+.twin-box{
+    margin-top:8px;
+    padding:9px;
+
+    border-radius:8px;
+
+    background:#eef2ff;
+    border:1px solid #c7d2fe;
+}
+
+.twin-grid{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:5px;
+    margin-top:6px;
+}
+
+.twin-grid div{
+    background:white;
+    padding:6px;
+    border-radius:5px;
+}
+
+.twin-grid small{
+    display:block;
+    font-size:7px;
+    color:#64748b;
+}
+
+.twin-grid b{
+    font-size:8px;
+}
+
+.twin-route{
+    margin-top:6px;
+    padding:7px;
+    border-left:3px solid #7c3aed;
+    background:white;
+    font-size:8px;
+    font-weight:bold;
+}
+
+.twin-route.alert{
+    border-left-color:#dc2626;
+    background:#fff1f2;
+    color:#991b1b;
+}
+
+.twin-route.route{
+    border-left-color:#f59e0b;
+    background:#fff7ed;
+    color:#9a3412;
+}
+
+/* =========================================================
+   ANALYTICS
+========================================================= */
+
+.analytics{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:6px;
+}
+
+.analytics-box{
+    border:1px solid #e2e8f0;
+    border-radius:7px;
+    padding:8px;
+    background:#f8fafc;
+}
+
+.analytics-box span{
+    display:block;
+    font-size:7px;
+    color:#64748b;
+}
+
+.analytics-box strong{
+    display:block;
+    margin-top:3px;
+    font-size:14px;
+}
+
+/* =========================================================
+   RESPONSIVE
+========================================================= */
+
+@media(max-width:1050px){
+
+    .dashboard{
+        grid-template-columns:1fr;
+    }
+
+}
+
+@media(max-width:700px){
+
+    .warehouse{
+        height:550px;
+    }
+
+    .rack{
+        width:90px;
+        height:70px;
+    }
+
+    .station{
+        width:85px;
+        height:55px;
+    }
+
+}
+
+</style>
+</head>
+
+<body>
+
+<!-- ========================================================
+ HEADER
+========================================================= -->
+
+<div class="header">
+
+    <div>
+        🤖 Smart Warehouse AMR Control & Digital Twin
+    </div>
+
+    <div
+        class="mode-badge"
+        id="modeBadge">
+
+        MANUAL MODE
+
+    </div>
+
+</div>
+
+
+<div class="container">
+
+<div class="dashboard">
+
+<!-- ========================================================
+ LEFT
+========================================================= -->
+
+<div>
+
+<div class="card">
+
+<div class="card-title">
+🏭 Warehouse Digital Twin
+</div>
+
+<div
+    class="warehouse"
+    id="warehouse">
+
+    <!-- ROADS -->
+
+    <div class="route horizontal route-a"></div>
+    <div class="route horizontal route-b"></div>
+    <div class="route horizontal route-c"></div>
+
+    <div class="route vertical route-v1"></div>
+    <div class="route vertical route-v2"></div>
+    <div class="route vertical route-v3"></div>
+
+    <div
+      class="route-label"
+      style="left:4%;top:17%;">
+      MAIN ROAD A
+    </div>
+
+    <div
+      class="route-label"
+      style="left:4%;top:47%;">
+      MAIN ROAD B
+    </div>
+
+    <div
+      class="route-label"
+      style="left:4%;top:77%;">
+      MAIN ROAD C
+    </div>
+
+
+    <!-- RACKS -->
+
+    <div class="rack rack1">
+
+        <div class="rack-title">
+            RACK-01
+        </div>
+
+        <div
+            class="bin full"
+            id="bin1">
+            B1 FULL
+        </div>
+
+    </div>
+
+
+    <div class="rack rack2">
+
+        <div class="rack-title">
+            RACK-02
+        </div>
+
+        <div
+            class="bin empty"
+            id="bin2">
+            B2 EMPTY
+        </div>
+
+    </div>
+
+
+    <div class="rack rack3">
+
+        <div class="rack-title">
+            RACK-03
+        </div>
+
+        <div
+            class="bin full"
+            id="bin3">
+            B3 FULL
+        </div>
+
+    </div>
+
+
+    <div class="rack rack4">
+
+        <div class="rack-title">
+            RACK-04
+        </div>
+
+        <div
+            class="bin full"
+            id="bin4">
+            B4 FULL
+        </div>
+
+    </div>
+
+
+    <div class="rack rack5">
+
+        <div class="rack-title">
+            RACK-05
+        </div>
+
+        <div
+            class="bin empty"
+            id="bin5">
+            B5 EMPTY
+        </div>
+
+    </div>
+
+
+    <div class="rack rack6">
+
+        <div class="rack-title">
+            RACK-06
+        </div>
+
+        <div
+            class="rack-title"
+            style="margin-top:8px;">
+            DYNAMIC BINS
+        </div>
+
+        <div
+            class="bin full"
+            id="bin6">
+            B6 FULL
+        </div>
+
+    </div>
+
+
+    <!-- STATIONS -->
+
+    <div class="station delivery">
+
+        📦 DELIVERY
+
+        <small id="deliveryCount">
+            Ready
+        </small>
+
+    </div>
+
+
+    <div class="station pickup">
+
+        📥 PICKUP
+
+        <small>
+            Stock:
+            <span id="stockCount">
+                10
+            </span>
+        </small>
+
+    </div>
+
+
+    <div class="station charging">
+
+        🔋 CHARGING
+
+        <small>
+            AMR Charging Point
+        </small>
+
+    </div>
+
+
+    <!-- AMRs -->
+
+    <div
+        class="amr physical"
+        id="amr1">
+        AMR-01
+    </div>
+
+    <div
+        class="amr"
+        id="amr2">
+        AMR-02
+    </div>
+
+    <div
+        class="amr"
+        id="amr3">
+        AMR-03
+    </div>
+
+</div>
+
+</div>
+
+
+<!-- ========================================================
+ SYSTEM PERFORMANCE
+========================================================= -->
+
+<div class="card">
+
+<div class="card-title">
+📊 SYSTEM PERFORMANCE
+</div>
+
+<div class="analytics">
+
+    <div class="analytics-box">
+        <span>TASKS COMPLETED</span>
+        <strong id="tasksCompleted">0</strong>
+    </div>
+
+    <div class="analytics-box">
+        <span>ACTIVE AMRs</span>
+        <strong id="activeAMRs">0</strong>
+    </div>
+
+    <div class="analytics-box">
+        <span>OBSTACLES DETECTED</span>
+        <strong id="obstaclesDetected">0</strong>
+    </div>
+
+    <div class="analytics-box">
+        <span>SUCCESSFUL REROUTES</span>
+        <strong id="reroutes">0</strong>
+    </div>
+
+    <div class="analytics-box">
+        <span>AVG TASK TIME</span>
+        <strong id="avgTaskTime">0 s</strong>
+    </div>
+
+    <div class="analytics-box">
+        <span>SWARM EFFICIENCY</span>
+        <strong id="swarmEfficiency">100%</strong>
+    </div>
+
+</div>
+
+</div>
+
+</div>
+
+
+<!-- ========================================================
+ RIGHT
+========================================================= -->
+
+<div>
+
+<!-- ========================================================
+ MQTT CLOUD
+========================================================= -->
+
+<div class="card">
+
+<div class="card-title">
+☁️ CLOUD / MQTT CONNECTION
+</div>
+
+<div class="mqtt-status">
+
+    <span>
+        <span
+            class="cloud-dot"
+            id="mqttDot">
+        </span>
+
+        <span id="mqttStatus">
+            DISCONNECTED
+        </span>
+    </span>
+
+    <span>
+        AMR-01
+    </span>
+
+</div>
+
+<input
+    class="input"
+    id="mqttTopic"
+    value="amr/demo/amr01"
+    placeholder="MQTT Base Topic">
+
+<div class="mqtt-buttons">
+
+    <button
+        class="connect"
+        onclick="connectMQTT()">
+        CONNECT
+    </button>
+
+    <button
+        class="disconnect"
+        onclick="disconnectMQTT()">
+        DISCONNECT
+    </button>
+
+</div>
+
+
+<div class="physical-controls">
+
+    <button
+        onclick="sendCommand('LEFT')">
+        ◀ LEFT
+    </button>
+
+    <button
+        class="physical-main"
+        onclick="sendCommand('FORWARD')">
+        ▲ FORWARD
+    </button>
+
+    <button
+        onclick="sendCommand('RIGHT')">
+        RIGHT ▶
+    </button>
+
+    <button
+        onclick="sendCommand('BACKWARD')">
+        ▼ BACK
+    </button>
+
+    <button
+        class="physical-stop"
+        onclick="sendCommand('STOP')">
+        STOP
+    </button>
+
+    <button
+        onclick="sendCommand('AUTO_STOP')">
+        AUTO OFF
+    </button>
+
+</div>
+
+
+<div class="physical-data">
+
+    <div>
+        <small>
+            LEFT SENSOR
+        </small>
+        <b id="physicalLeft">
+            -- cm
+        </b>
+    </div>
+
+    <div>
+        <small>
+            RIGHT SENSOR
+        </small>
+        <b id="physicalRight">
+            -- cm
+        </b>
+    </div>
+
+    <div>
+        <small>
+            OBSTACLE
+        </small>
+        <b id="physicalObstacle">
+            --
+        </b>
+    </div>
+
+    <div>
+        <small>
+            MOTOR
+        </small>
+        <b id="physicalMotor">
+            STOP
+        </b>
+    </div>
+
+</div>
+
+<div
+    style="margin-top:7px;
+           font-size:8px;
+           color:#64748b;">
+
+    Last update:
+    <span id="physicalUpdate">
+        --
+    </span>
+
+</div>
+
+
+<!-- ======================================================
+ DIGITAL TWIN
+======================================================= -->
+
+<div class="twin-box">
+
+<div style="
+    font-size:10px;
+    font-weight:bold;">
+
+    🔗 DIGITAL TWIN — AMR-01
+
+</div>
+
+<div class="twin-grid">
+
+    <div>
+        <small>
+            TWIN MODE
+        </small>
+
+        <b id="twinMode">
+            NOT LINKED
+        </b>
+    </div>
+
+    <div>
+        <small>
+            NAVIGATION
+        </small>
+
+        <b id="twinNav">
+            IDLE
+        </b>
+    </div>
+
+    <div>
+        <small>
+            ROUTE SEGMENT
+        </small>
+
+        <b id="twinSegment">
+            --
+        </b>
+    </div>
+
+    <div>
+        <small>
+            REROUTE SIDE
+        </small>
+
+        <b id="twinSide">
+            NONE
+        </b>
+    </div>
+
+</div>
+
+<div
+    class="twin-route"
+    id="twinRoute">
+
+    Waiting for physical AMR telemetry.
+
+</div>
+
+</div>
+
+</div>
+
+
+<!-- ========================================================
+ AUTO TASK
+========================================================= -->
+
+<div class="card">
+
+<div class="card-title">
+🤖 PHYSICAL AMR AUTO TASK
+</div>
+
+<select
+    class="input"
+    id="physicalTask">
+
+    <option value="DELIVER_FULL_BIN">
+        DELIVER FULL BIN
+    </option>
+
+    <option value="RESTOCK_EMPTY_BIN">
+        RESTOCK EMPTY BIN
+    </option>
+
+</select>
+
+
+<div class="control-row">
+
+    <button
+        class="auto-btn"
+        id="autoButton"
+        onclick="toggleAuto()">
+
+        AUTO MODE: OFF
+
+    </button>
+
+</div>
+
+<div
+    style="
+      margin-top:7px;
+      font-size:8px;
+      color:#64748b;"
+    id="autoStatus">
+
+    Manual control.
+
+</div>
+
+</div>
+
+
+<!-- ========================================================
+ FLEET
+========================================================= -->
+
+<div class="card">
+
+<div class="card-title">
+🚚 AMR FLEET
+</div>
+
+
+<div class="amr-card">
+
+<div class="amr-header">
+
+    <span>
+        AMR-01
+    </span>
+
+    <span id="fleet1">
+        PHYSICAL
+    </span>
+
+</div>
+
+<div class="battery-bar">
+    <div
+        class="battery-fill"
+        id="battery1"
+        style="width:85%;">
+    </div>
+</div>
+
+<div class="task-text"
+     id="task1">
+
+    Physical Digital Twin
+
+</div>
+
+<div class="control-row">
+
+    <button
+        class="start-btn"
+        onclick="startAMR(1)">
+        START
+    </button>
+
+    <button
+        class="stop-btn"
+        onclick="stopAMR(1)">
+        STOP
+    </button>
+
+</div>
+
+</div>
+
+
+<div class="amr-card">
+
+<div class="amr-header">
+
+    <span>
+        AMR-02
+    </span>
+
+    <span>
+        VIRTUAL
+    </span>
+
+</div>
+
+<div class="battery-bar">
+    <div
+        class="battery-fill"
+        id="battery2"
+        style="width:75%;">
+    </div>
+</div>
+
+<div class="task-text"
+     id="task2">
+
+    Idle
+
+</div>
+
+<div class="control-row">
+
+    <button
+        class="start-btn"
+        onclick="startAMR(2)">
+        START
+    </button>
+
+    <button
+        class="stop-btn"
+        onclick="stopAMR(2)">
+        STOP
+    </button>
+
+</div>
+
+</div>
+
+
+<div class="amr-card">
+
+<div class="amr-header">
+
+    <span>
+        AMR-03
+    </span>
+
+    <span>
+        VIRTUAL
+    </span>
+
+</div>
+
+<div class="battery-bar">
+    <div
+        class="battery-fill"
+        id="battery3"
+        style="width:65%;">
+    </div>
+</div>
+
+<div class="task-text"
+     id="task3">
+
+    Idle
+
+</div>
+
+<div class="control-row">
+
+    <button
+        class="start-btn"
+        onclick="startAMR(3)">
+        START
+    </button>
+
+    <button
+        class="stop-btn"
+        onclick="stopAMR(3)">
+        STOP
+    </button>
+
+</div>
+
+</div>
+
+</div>
+
+
+<!-- ========================================================
+ EDGE AI
+========================================================= -->
+
+<div class="card">
+
+<div class="card-title">
+🧠 EDGE AI — LOCAL DECISION
+</div>
+
+<div class="ai-box"
+     id="edgeBox">
+
+<div class="ai-head">
+
+    <span>
+        AMR-01
+    </span>
+
+    <span
+        class="ai-state"
+        id="edgeState">
+
+        WAITING
+
+    </span>
+
+</div>
+
+<div class="ai-detail"
+     id="edgeDetail">
+
+    Waiting for physical sensor data.
+
+</div>
+
+<div
+    class="ai-command"
+    id="edgeCommand">
+
+    COMMAND: MONITOR
+
+</div>
+
+</div>
+
+</div>
+
+
+<!-- ========================================================
+ INVENTORY
+========================================================= -->
+
+<div class="card">
+
+<div class="card-title">
+📦 LIVE BIN INVENTORY
+</div>
+
+<div id="inventory">
+
+</div>
+
+</div>
+
+
+<!-- ========================================================
+ SWARM
+========================================================= -->
+
+<div class="card">
+
+<div class="card-title">
+🐝 SWARM INTELLIGENCE
+</div>
+
+<div
+    style="
+      font-size:9px;
+      color:#64748b;
+      margin-bottom:8px;">
+
+    Multiple AMRs coordinate task allocation.
+
+</div>
+
+<div
+    id="swarmText"
+    style="
+      font-size:9px;
+      font-weight:bold;">
+
+    AMR-01 available
+
+</div>
+
+<div class="control-row">
+
+    <button
+        class="swarm-btn"
+        onclick="startSwarm()">
+
+        SWARM MODE
+
+    </button>
+
+    <button
+        class="reset-btn"
+        onclick="resetSimulation()">
+
+        RESET
+
+    </button>
+
+</div>
+
+</div>
+
+</div>
+
+</div>
+
+</div>
+
+
+<script>
+
+/* =========================================================
+ MQTT
+========================================================= */
+
+const MQTT_BROKER =
+    "wss://broker.hivemq.com:8884/mqtt";
+
+let mqttClient = null;
+
+let mqttTopic =
+    "amr/demo/amr01";
+
+let mqttGeneration = 0;
+
+let mqttManualDisconnect = false;
+
+let physicalAutoMode = false;
+
+
+/* =========================================================
+ PERFORMANCE
+========================================================= */
+
+const performanceState = {
+
+    tasksCompleted:0,
+
+    obstaclesDetected:0,
+
+    successfulReroutes:0,
+
+    swarmDecisions:0,
+
+    totalTaskTime:0,
+
+    taskTimes:[]
+
+};
+
+
+/* =========================================================
+ AMRs
+========================================================= */
+
+const amrs = {
+
+    1:{
+        id:1,
+        x:18,
+        y:50,
+        battery:85,
+        moving:false,
+        physical:true,
+        task:"Physical Twin",
+        segment:0,
+        pathIndex:0,
+        path:[],
+        taskStart:0
+    },
+
+    2:{
+        id:2,
+        x:48,
+        y:20,
+        battery:75,
+        moving:false,
+        physical:false,
+        task:"Idle",
+        segment:0,
+        pathIndex:0,
+        path:[],
+        taskStart:0
+    },
+
+    3:{
+        id:3,
+        x:68,
+        y:80,
+        battery:65,
+        moving:false,
+        physical:false,
+        task:"Idle",
+        segment:0,
+        pathIndex:0,
+        path:[],
+        taskStart:0
+    }
+
+};
+
+
+/* =========================================================
+ WAREHOUSE ROUTE NODES
+ ========================================================= */
+
+const nodes = {
+
+    A1:{x:15,y:20},
+    A2:{x:26,y:20},
+    A3:{x:51,y:20},
+    A4:{x:72,y:20},
+
+    B1:{x:15,y:50},
+    B2:{x:26,y:50},
+    B3:{x:51,y:50},
+    B4:{x:72,y:50},
+
+    C1:{x:15,y:80},
+    C2:{x:26,y:80},
+    C3:{x:51,y:80},
+    C4:{x:72,y:80},
+
+    D:{x:82,y:20},
+    P:{x:82,y:50},
+    C:{x:82,y:80}
+
+};
+
+
+/* =========================================================
+ BIN DATA
+========================================================= */
+
+const bins = {
+
+    1:"FULL",
+    2:"EMPTY",
+    3:"FULL",
+    4:"FULL",
+    5:"EMPTY",
+    6:"FULL"
+
+};
+
+let pickupStock = 10;
+
+
+/* =========================================================
+ OBSTACLES
+========================================================= */
+
+let obstacles = [];
+
+let obstacleTimer = null;
+
+
+/* =========================================================
+ HELPERS
+========================================================= */
+
+function sleep(ms){
+
+    return new Promise(
+        resolve => setTimeout(resolve,ms)
+    );
+
+}
+
+
+/* =========================================================
+ MQTT STATUS
+========================================================= */
+
+function setMQTTStatus(
+    text,
+    state=""
+){
+
+    const status =
+        document.getElementById(
+            "mqttStatus"
+        );
+
+    const dot =
+        document.getElementById(
+            "mqttDot"
+        );
+
+    if(status)
+        status.textContent = text;
+
+    if(dot)
+        dot.className =
+            "cloud-dot " + state;
+
+}
+
+
+/* =========================================================
+ SUBSCRIBE
+========================================================= */
+
+function subscribeTopics(client){
+
+    if(!client)
+        return;
+
+    client.subscribe(
+        mqttTopic + "/telemetry",
+        {qos:0}
+    );
+
+    client.subscribe(
+        mqttTopic + "/status",
+        {qos:0}
+    );
+
+}
+
+
+/* =========================================================
+ MQTT CONNECT
+========================================================= */
+
+function connectMQTT(){
+
+    if(
+        typeof mqtt ===
+        "undefined"
+    ){
+
+        setMQTTStatus(
+            "MQTT LIBRARY ERROR",
+            "error"
+        );
+
+        return;
+
+    }
+
+
+    mqttTopic =
+        (
+            document.getElementById(
+                "mqttTopic"
+            ).value ||
+            "amr/demo/amr01"
+        ).trim();
+
+
+    mqttManualDisconnect =
+        false;
+
+
+    mqttGeneration++;
+
+    const generation =
+        mqttGeneration;
+
+
+    if(mqttClient){
+
+        try{
+            mqttClient.end(
+                true
+            );
+        }
+        catch(e){}
+
+        mqttClient = null;
+
+    }
+
+
+    setMQTTStatus(
+        "CONNECTING..."
+    );
+
+
+    const clientId =
+        "AMR-Dashboard-" +
+        Math.random()
+        .toString(16)
+        .slice(2);
+
+
+    const client =
+        mqtt.connect(
+            MQTT_BROKER,
+            {
+
+                clientId:clientId,
+
+                clean:true,
+
+                keepalive:30,
+
+                connectTimeout:10000,
+
+                reconnectPeriod:2000,
+
+                reconnectOnConnackError:true,
+
+                resubscribe:true,
+
+                protocolVersion:4
+
+            }
+        );
+
+
+    mqttClient = client;
+
+
+    client.on(
+        "connect",
+        ()=>{
+
+            if(
+                generation !==
+                mqttGeneration
+            )
+                return;
+
+
+            setMQTTStatus(
+                "CONNECTED",
+                "connected"
+            );
+
+
+            subscribeTopics(
+                client
+            );
+
+
+            activatePhysicalTwin();
+
+
+        }
+    );
+
+
+    client.on(
+        "reconnect",
+        ()=>{
+
+            if(
+                generation !==
+                mqttGeneration
+            )
+                return;
+
+
+            setMQTTStatus(
+                "RECONNECTING..."
+            );
+
+        }
+    );
+
+
+    client.on(
+        "offline",
+        ()=>{
+
+            if(
+                generation !==
+                mqttGeneration
+            )
+                return;
+
+
+            setMQTTStatus(
+                "OFFLINE",
+                "error"
+            );
+
+        }
+    );
+
+
+    client.on(
+        "error",
+        ()=>{
+            
+            if(
+                generation !==
+                mqttGeneration
+            )
+                return;
+
+
+            setMQTTStatus(
+                "CONNECTION ERROR",
+                "error"
+            );
+
+        }
+    );
+
+
+    client.on(
+        "close",
+        ()=>{
+
+            if(
+                generation !==
+                mqttGeneration
+            )
+                return;
+
+
+            if(
+                !mqttManualDisconnect
+            ){
+
+                setMQTTStatus(
+                    "RECONNECTING..."
+                );
+
+            }
+            else{
+
+                setMQTTStatus(
+                    "DISCONNECTED"
+                );
+
+            }
+
+        }
+    );
+
+
+    client.on(
+        "message",
+        (topic,payload)=>{
+
+            if(
+                generation !==
+                mqttGeneration
+            )
+                return;
+
+
+            handleMQTTMessage(
+                topic,
+                payload
+            );
+
+        }
+    );
+
+}
+
+
+/* =========================================================
+ MQTT DISCONNECT
+========================================================= */
+
+function disconnectMQTT(){
+
+    mqttManualDisconnect =
+        true;
+
+    mqttGeneration++;
+
+
+    if(mqttClient){
+
+        try{
+            mqttClient.end(
+                true
+            );
+        }
+        catch(e){}
+
+    }
+
+
+    mqttClient = null;
+
+    deactivatePhysicalTwin();
+
+    setMQTTStatus(
+        "DISCONNECTED"
+    );
+
+}
+
+
+/* =========================================================
+ PUBLISH
+========================================================= */
+
+function publishCommand(
+    command,
+    extra={}
+){
+
+    if(
+        !mqttClient ||
+        !mqttClient.connected
+    ){
+
+        setMQTTStatus(
+            "NOT CONNECTED",
+            "error"
+        );
+
+        return false;
+
+    }
+
+
+    const data =
+        Object.assign(
+            {
+                command:command,
+                time:Date.now()
+            },
+            extra
+        );
+
+
+    mqttClient.publish(
+        mqttTopic +
+        "/command",
+
+        JSON.stringify(data),
+
+        {
+            qos:0,
+            retain:false
+        }
+    );
+
+
+    return true;
+
+}
+
+
+/* =========================================================
+ MANUAL COMMAND
+========================================================= */
+
+function sendCommand(
+    command
+){
+
+    if(
+        publishCommand(
+            command
+        )
+    ){
+
+        document.getElementById(
+            "physicalMotor"
+        ).textContent =
+            command;
+
+    }
+
+}
+
+
+/* =========================================================
+ AUTO
+========================================================= */
+
+function toggleAuto(){
+
+    if(
+        !mqttClient ||
+        !mqttClient.connected
+    ){
+
+        setMQTTStatus(
+            "NOT CONNECTED",
+            "error"
+        );
+
+        return;
+
+    }
+
+
+    physicalAutoMode =
+        !physicalAutoMode;
+
+
+    const button =
+        document.getElementById(
+            "autoButton"
+        );
+
+
+    if(
+        physicalAutoMode
+    ){
+
+        const task =
+            document.getElementById(
+                "physicalTask"
+            ).value;
+
+
+        publishCommand(
+            "AUTO_START",
+            {
+                task:task
+            }
+        );
+
+
+        publishCommand(
+            "AUTO_TASK",
+            {
+                task:task
+            }
+        );
+
+
+        button.textContent =
+            "AUTO MODE: ON";
+
+
+        document.getElementById(
+            "autoStatus"
+        ).textContent =
+            "ESP32 autonomous mode ON.";
+
+    }
+    else{
+
+        publishCommand(
+            "AUTO_STOP"
+        );
+
+
+        button.textContent =
+            "AUTO MODE: OFF";
+
+
+        document.getElementById(
+            "autoStatus"
+        ).textContent =
+            "Manual mode.";
+
+    }
+
+}
+
+
+/* =========================================================
+ MQTT MESSAGE
+========================================================= */
+
+function handleMQTTMessage(
+    topic,
+    payload
+){
+
+    let data;
+
+    try{
+
+        data =
+            JSON.parse(
+                payload.toString()
+            );
+
+    }
+    catch(e){
+
+        return;
+
+    }
+
+
+    if(
+        data.amr !==
+        "AMR-01"
+    )
+        return;
+
+
+    /* LEFT SENSOR */
+
+    if(
+        data.distanceLeft !==
+        undefined
+    ){
+
+        document.getElementById(
+            "physicalLeft"
+        ).textContent =
+            Number(
+                data.distanceLeft
+            ).toFixed(1) +
+            " cm";
+
+    }
+
+
+    /* RIGHT SENSOR */
+
+    if(
+        data.distanceRight !==
+        undefined
+    ){
+
+        document.getElementById(
+            "physicalRight"
+        ).textContent =
+            Number(
+                data.distanceRight
+            ).toFixed(1) +
+            " cm";
+
+    }
+
+
+    /* OBSTACLE */
+
+    if(
+        data.obstacle !==
+        undefined
+    ){
+
+        const el =
+            document.getElementById(
+                "physicalObstacle"
+            );
+
+        el.textContent =
+            data.obstacle ?
+            "DETECTED" :
+            "CLEAR";
+
+    }
+
+
+    /* MOTOR */
+
+    if(data.motor){
+
+        document.getElementById(
+            "physicalMotor"
+        ).textContent =
+            data.motor;
+
+    }
+
+
+    /* UPDATE */
+
+    document.getElementById(
+        "physicalUpdate"
+    ).textContent =
+        new Date()
+        .toLocaleTimeString();
+
+
+    /* TWIN */
+
+    if(
+        data.navState ||
+        data.routeInfo
+    ){
+
+        updatePhysicalTwinUI(
+            data
+        );
+
+    }
+
+
+    /* OBSTACLE EDGE AI */
+
+    if(
+        data.obstacle === true
+    ){
+
+        updateEdgeAI(
+            "OBSTACLE DETECTED",
+            data.routeInfo ||
+            "Obstacle detected by physical sensors.",
+            "STOP / CHECK OBSTACLE",
+            true
+        );
+
+    }
+    else if(
+        data.navState ===
+        "MOVING FORWARD"
+    ){
+
+        updateEdgeAI(
+            "MOVING",
+            data.routeInfo ||
+            "Following Digital Twin route.",
+            "FOLLOW ROUTE",
+            false
+        );
+
+    }
+    else if(
+        data.navState ===
+        "TURNING LEFT"
+    ){
+
+        updateEdgeAI(
+            "REROUTING",
+            data.routeInfo ||
+            "Turning left.",
+            "SELECT ALTERNATE LEFT ROAD",
+            false
+        );
+
+    }
+    else if(
+        data.navState ===
+        "TURNING RIGHT"
+    ){
+
+        updateEdgeAI(
+            "REROUTING",
+            data.routeInfo ||
+            "Turning right.",
+            "SELECT ALTERNATE RIGHT ROAD",
+            false
+        );
+
+    }
+
+
+    /* SEGMENT */
+
+    if(
+        data.segment !==
+        undefined
+    ){
+
+        document.getElementById(
+            "twinSegment"
+        ).textContent =
+            data.segment;
+
+    }
+
+}
+
+
+/* =========================================================
+ PHYSICAL TWIN
+========================================================= */
+
+let physicalTwinMode =
+    false;
+
+
+function activatePhysicalTwin(){
+
+    physicalTwinMode =
+        true;
+
+
+    document.getElementById(
+        "twinMode"
+    ).textContent =
+        "LIVE PHYSICAL";
+
+
+    document.getElementById(
+        "fleet1"
+    ).textContent =
+        "PHYSICAL";
+
+
+    document.getElementById(
+        "amr1"
+    ).classList.add(
+        "physical"
+    );
+
+}
+
+
+function deactivatePhysicalTwin(){
+
+    physicalTwinMode =
+        false;
+
+
+    document.getElementById(
+        "twinMode"
+    ).textContent =
+        "NOT LINKED";
+
+}
+
+
+/* =========================================================
+ TWIN UI
+========================================================= */
+
+function updatePhysicalTwinUI(
+    data
+){
+
+    activatePhysicalTwin();
+
+
+    document.getElementById(
+        "twinNav"
+    ).textContent =
+        data.navState ||
+        "IDLE";
+
+
+    document.getElementById(
+        "twinSide"
+    ).textContent =
+        data.rerouteSide ||
+        "NONE";
+
+
+    if(
+        data.segment !==
+        undefined
+    ){
+
+        document.getElementById(
+            "twinSegment"
+        ).textContent =
+            data.segment;
+
+    }
+
+
+    const route =
+        document.getElementById(
+            "twinRoute"
+        );
+
+
+    route.textContent =
+        data.routeInfo ||
+        "Physical telemetry received.";
+
+
+    route.className =
+        "twin-route";
+
+
+    if(
+        data.obstacle === true
+    ){
+
+        route.classList.add(
+            "alert"
+        );
+
+    }
+    else if(
+        data.rerouteSide &&
+        data.rerouteSide !==
+        "NONE"
+    ){
+
+        route.classList.add(
+            "route"
+        );
+
+    }
+
+}
+
+
+/* =========================================================
+ EDGE AI
+========================================================= */
+
+function updateEdgeAI(
+    state,
+    detail,
+    command,
+    alert
+){
+
+    const box =
+        document.getElementById(
+            "edgeBox"
+        );
+
+    const stateEl =
+        document.getElementById(
+            "edgeState"
+        );
+
+    const detailEl =
+        document.getElementById(
+            "edgeDetail"
+        );
+
+    const commandEl =
+        document.getElementById(
+            "edgeCommand"
+        );
+
+
+    stateEl.textContent =
+        state;
+
+    detailEl.textContent =
+        detail;
+
+    commandEl.textContent =
+        "COMMAND: " +
+        command;
+
+
+    box.className =
+        "ai-box";
+
+
+    stateEl.className =
+        "ai-state";
+
+
+    commandEl.className =
+        "ai-command";
+
+
+    if(alert){
+
+        box.classList.add(
+            "alert"
+        );
+
+        stateEl.classList.add(
+            "alert"
+        );
+
+        commandEl.classList.add(
+            "alert"
+        );
+
+    }
+    else if(
+        state ===
+        "REROUTING"
+    ){
+
+        stateEl.classList.add(
+            "route"
+        );
+
+        commandEl.classList.add(
+            "route"
+        );
+
+    }
+
+}
+
+
+/* =========================================================
+ VIRTUAL AMR ROUTES
+========================================================= */
+
+const routes = {
+
+    deliver:[
+        "A1",
+        "A2",
+        "A3",
+        "A4",
+        "D",
+        "P",
+        "B4",
+        "B3"
+    ],
+
+    restock:[
+        "B3",
+        "B4",
+        "P",
+        "C4",
+        "C3",
+        "C"
+    ]
+
+};
+
+
+/* =========================================================
+ NODE POSITION
+========================================================= */
+
+function moveAMRToNode(
+    id,
+    nodeName
+){
+
+    const amr =
+        amrs[id];
+
+    const node =
+        nodes[nodeName];
+
+    if(!amr || !node)
+        return;
+
+
+    amr.x =
+        node.x;
+
+    amr.y =
+        node.y;
+
+
+    const el =
+        document.getElementById(
+            "amr" + id
+        );
+
+
+    el.style.left =
+        amr.x + "%";
+
+
+    el.style.top =
+        amr.y + "%";
+
+}
+
+
+/* =========================================================
+ HEADING
+========================================================= */
+
+function heading(
+    a,
+    b
+){
+
+    if(b.x > a.x)
+        return "E";
+
+    if(b.x < a.x)
+        return "W";
+
+    if(b.y > a.y)
+        return "S";
+
+    return "N";
+
+}
+
+
+/* =========================================================
+ TURN
+========================================================= */
+
+function turnForHeading(
+    from,
+    to
+){
+
+    const order =
+        ["N","E","S","W"];
+
+    const a =
+        order.indexOf(
+            from
+        );
+
+    const b =
+        order.indexOf(
+            to
+        );
+
+
+    if(a === b)
+        return "NONE";
+
+
+    if(
+        (b-a+4)%4 === 1
+    )
+        return "RIGHT";
+
+
+    if(
+        (a-b+4)%4 === 1
+    )
+        return "LEFT";
+
+
+    return "UTURN";
+
+}
+
+
+/* =========================================================
+ SEND ROUTE SEGMENT TO PHYSICAL ESP32
+========================================================= */
+
+function sendPhysicalSegment(
+    segment,
+    fromName,
+    toName,
+    moveMs,
+    turnMs
+){
+
+    if(
+        !physicalTwinMode ||
+        !mqttClient ||
+        !mqttClient.connected
+    )
+        return;
+
+
+    const from =
+        nodes[fromName];
+
+    const to =
+        nodes[toName];
+
+
+    const previous =
+        segment > 1 ?
+        physicalLastHeading :
+        "E";
+
+
+    const h =
+        heading(
+            from,
+            to
+        );
+
+
+    const turn =
+        turnForHeading(
+            previous,
+            h
+        );
+
+
+    physicalLastHeading =
+        h;
+
+
+    publishCommand(
+        "NAV_SEGMENT",
+        {
+
+            segment:
+                segment,
+
+            heading:
+                h,
+
+            turn:
+                turn,
+
+            turnMs:
+                turn === "NONE" ?
+                0 :
+                turnMs,
+
+            moveMs:
+                moveMs,
+
+            from:{
+                x:from.x,
+                y:from.y
+            },
+
+            to:{
+                x:to.x,
+                y:to.y
+            }
+
+        }
+    );
+
+}
+
+
+let physicalLastHeading =
+    "E";
+
+
+/* =========================================================
+ VIRTUAL MOVEMENT
+========================================================= */
+
+async function executeVirtualRoute(
+    id,
+    route
+){
+
+    const amr =
+        amrs[id];
+
+    if(!amr)
+        return;
+
+
+    amr.moving =
+        true;
+
+    amr.taskStart =
+        Date.now();
+
+
+    for(
+        let i=0;
+        i<route.length;
+        i++
+    ){
+
+        if(
+            !amr.moving
+        )
+            break;
+
+
+        const nodeName =
+            route[i];
+
+        const previousName =
+            i > 0 ?
+            route[i-1] :
+            nodeName;
+
+
+        const from =
+            nodes[previousName];
+
+        const to =
+            nodes[nodeName];
+
+
+        if(
+            i > 0 &&
+            id === 1 &&
+            physicalTwinMode
+        ){
+
+            const h =
+                heading(
+                    from,
+                    to
+                );
+
+
+            const moveMs =
+                calculateMoveTime(
+                    from,
+                    to
+                );
+
+
+            sendPhysicalSegment(
+                i,
+                previousName,
+                nodeName,
+                moveMs,
+                500
+            );
+
+        }
+
+
+        await animateVirtualSegment(
+            id,
+            from,
+            to
+        );
+
+
+        if(
+            id === 1 &&
+            physicalTwinMode
+        ){
+
+            await waitForPhysicalSegment(
+                i
+            );
+
+        }
+
+    }
+
+
+    amr.moving =
+        false;
+
+
+    if(
+        amr.taskStart
+    ){
+
+        const elapsed =
+            Date.now() -
+            amr.taskStart;
+
+
+        performanceState
+            .taskTimes
+            .push(
+                elapsed
+            );
+
+
+        performanceState
+            .totalTaskTime +=
+            elapsed;
+
+    }
+
+
+    performanceState
+        .tasksCompleted++;
+
+
+    updatePerformance();
+
+}
+
+
+/* =========================================================
+ MOVE TIME
+========================================================= */
+
+function calculateMoveTime(
+    from,
+    to
+){
+
+    const dx =
+        to.x - from.x;
+
+    const dy =
+        to.y - from.y;
+
+    const distance =
+        Math.sqrt(
+            dx*dx +
+            dy*dy
+        );
+
+
+    return Math.max(
+        1000,
+        distance * 70
+    );
+
+}
+
+
+/* =========================================================
+ ANIMATE
+========================================================= */
+
+function animateVirtualSegment(
+    id,
+    from,
+    to
+){
+
+    return new Promise(
+        resolve=>{
+
+            const amr =
+                amrs[id];
+
+            const el =
+                document.getElementById(
+                    "amr" + id
+                );
+
+
+            const startX =
+                from.x;
+
+            const startY =
+                from.y;
+
+            const endX =
+                to.x;
+
+            const endY =
+                to.y;
+
+
+            const duration =
+                calculateMoveTime(
+                    from,
+                    to
+                );
+
+
+            const start =
+                performance.now();
+
+
+            function frame(
+                now
+            ){
+
+                if(
+                    !amr.moving
+                ){
+
+                    resolve();
+
+                    return;
+
+                }
+
+
+                const p =
+                    Math.min(
+                        1,
+                        (
+                            now -
+                            start
+                        ) /
+                        duration
+                    );
+
+
+                amr.x =
+                    startX +
+                    (
+                        endX -
+                        startX
+                    ) * p;
+
+
+                amr.y =
+                    startY +
+                    (
+                        endY -
+                        startY
+                    ) * p;
+
+
+                el.style.left =
+                    amr.x + "%";
+
+                el.style.top =
+                    amr.y + "%";
+
+
+                if(
+                    p >= 1
+                ){
+
+                    resolve();
+
+                    return;
+
+                }
+
+
+                requestAnimationFrame(
+                    frame
+                );
+
+            }
+
+
+            requestAnimationFrame(
+                frame
+            );
+
+        }
+    );
+
+}
+
+
+/* =========================================================
+ PHYSICAL SEGMENT WAIT
+========================================================= */
+
+function waitForPhysicalSegment(
+    segment
+){
+
+    return new Promise(
+        resolve=>{
+
+            let done = false;
+
+
+            const timer =
+                setTimeout(
+                    ()=>{
+                        
+                        if(!done){
+
+                            done =
+                                true;
+
+                            resolve();
+
+                        }
+
+                    },
+                    7000
+                );
+
+
+            physicalSegmentResolver =
+                ()=>{
+                    
+                    if(done)
+                        return;
+
+                    done =
+                        true;
+
+                    clearTimeout(
+                        timer
+                    );
+
+                    resolve();
+
+                };
+
+        }
+    );
+
+}
+
+
+let physicalSegmentResolver =
+    null;
+
+
+/* =========================================================
+ STATUS ACK EXTENSION
+========================================================= */
+
+function handlePhysicalStatus(
+    data
+){
+
+    if(
+        data.status ===
+        "TWIN_ROUTE_SEGMENT_COMPLETE"
+    ){
+
+        if(
+            physicalSegmentResolver
+        ){
+
+            physicalSegmentResolver();
+
+            physicalSegmentResolver =
+                null;
+
+        }
+
+    }
+
+}
+
+
+/* =========================================================
+ PATCH MESSAGE HANDLER
+========================================================= */
+
+const oldMQTTHandler =
+    handleMQTTMessage;
+
+
+/* =========================================================
+ START AMR
+========================================================= */
+
+function startAMR(
+    id
+){
+
+    if(
+        id === 1
+    ){
+
+        if(
+            !mqttClient ||
+            !mqttClient.connected
+        ){
+
+            setMQTTStatus(
+                "NOT CONNECTED",
+                "error"
+            );
+
+            return;
+
+        }
+
+
+        physicalTwinMode =
+            true;
+
+
+        publishCommand(
+            "AUTO_START"
+        );
+
+
+        document.getElementById(
+            "task1"
+        ).textContent =
+            "Physical route active";
+
+
+        return;
+
+    }
+
+
+    const amr =
+        amrs[id];
+
+    if(
+        amr.moving
+    )
+        return;
+
+
+    amr.task =
+        "DELIVERING";
+
+    amr.moving =
+        true;
+
+
+    document.getElementById(
+        "task" + id
+    ).textContent =
+        "DELIVERING";
+
+
+    executeVirtualRoute(
+        id,
+        routes.deliver
+    );
+
+}
+
+
+/* =========================================================
+ STOP AMR
+========================================================= */
+
+function stopAMR(
+    id
+){
+
+    const amr =
+        amrs[id];
+
+    if(!amr)
+        return;
+
+
+    amr.moving =
+        false;
+
+
+    if(
+        id === 1
+    ){
+
+        sendCommand(
+            "STOP"
+        );
+
+    }
+
+
+    document.getElementById(
+        "task" + id
+    ).textContent =
+        "Stopped";
+
+}
+
+
+/* =========================================================
+ INVENTORY
+========================================================= */
+
+function updateInventory(){
+
+    const container =
+        document.getElementById(
+            "inventory"
+        );
+
+
+    container.innerHTML =
+        "";
+
+
+    Object.keys(
+        bins
+    ).forEach(
+        id=>{
+
+            const state =
+                bins[id];
+
+
+            const row =
+                document.createElement(
+                    "div"
+                );
+
+
+            row.className =
+                "inventory-row";
+
+
+            let cls =
+                "full";
+
+
+            if(
+                state ===
+                "EMPTY"
+            )
+                cls =
+                    "empty";
+
+
+            if(
+                state ===
+                "TRANSPORT"
+            )
+                cls =
+                    "transport";
+
+
+            row.innerHTML =
+
+                `<span>BIN-${id}</span>
+                 <span class="${cls}">
+                    ${state}
+                 </span>`;
+
+
+            container.appendChild(
+                row
+            );
+
+        }
+    );
+
+}
+
+
+/* =========================================================
+ BIN VISUALS
+========================================================= */
+
+function updateBins(){
+
+    Object.keys(
+        bins
+    ).forEach(
+        id=>{
+
+            const el =
+                document.getElementById(
+                    "bin" + id
+                );
+
+            if(!el)
+                return;
+
+
+            const state =
+                bins[id];
+
+
+            el.className =
+                "bin";
+
+
+            if(
+                state ===
+                "FULL"
+            )
+                el.classList.add(
+                    "full"
+                );
+
+            else if(
+                state ===
+                "EMPTY"
+            )
+                el.classList.add(
+                    "empty"
+                );
+
+            else if(
+                state ===
+                "TRANSPORT"
+            )
+                el.classList.add(
+                    "transport"
+                );
+
+            else
+                el.classList.add(
+                    "restocking"
+                );
+
+
+            el.textContent =
+                "B" +
+                id +
+                " " +
+                state;
+
+        }
+    );
+
+
+    document.getElementById(
+        "stockCount"
+    ).textContent =
+        pickupStock;
+
+}
+
+
+/* =========================================================
+ PERFORMANCE
+========================================================= */
+
+function updatePerformance(){
+
+    document.getElementById(
+        "tasksCompleted"
+    ).textContent =
+        performanceState
+            .tasksCompleted;
+
+
+    document.getElementById(
+        "obstaclesDetected"
+    ).textContent =
+        performanceState
+            .obstaclesDetected;
+
+
+    document.getElementById(
+        "reroutes"
+    ).textContent =
+        performanceState
+            .successfulReroutes;
+
+
+    const active =
+        Object.values(
+            amrs
+        ).filter(
+            a=>a.moving
+        ).length;
+
+
+    document.getElementById(
+        "activeAMRs"
+    ).textContent =
+        active;
+
+
+    const times =
+        performanceState
+            .taskTimes;
+
+
+    if(
+        times.length
+    ){
+
+        const avg =
+            times.reduce(
+                (a,b)=>a+b,
+                0
+            ) /
+            times.length /
+            1000;
+
+
+        document.getElementById(
+            "avgTaskTime"
+        ).textContent =
+            avg.toFixed(1) +
+            " s";
+
+    }
+
+
+    const efficiency =
+        Math.max(
+            25,
+            100 -
+            performanceState
+                .successfulReroutes * 2 -
+            performanceState
+                .obstaclesDetected
+        );
+
+
+    document.getElementById(
+        "swarmEfficiency"
+    ).textContent =
+        efficiency +
+        "%";
+
+}
+
+
+/* =========================================================
+ SWARM
+========================================================= */
+
+function startSwarm(){
+
+    performanceState
+        .swarmDecisions++;
+
+
+    document.getElementById(
+        "swarmText"
+    ).textContent =
+        "Swarm coordination active: AMR-02 and AMR-03 handle virtual tasks while AMR-01 remains the physical AMR.";
+
+}
+
+
+/* =========================================================
+ RESET
+========================================================= */
+
+function resetSimulation(){
+
+    Object.keys(
+        amrs
+    ).forEach(
+        id=>{
+
+            amrs[id].moving =
+                false;
+
+        }
+    );
+
+
+    amrs[1].x =
+        18;
+
+    amrs[1].y =
+        50;
+
+
+    amrs[2].x =
+        48;
+
+    amrs[2].y =
+        20;
+
+
+    amrs[3].x =
+        68;
+
+    amrs[3].y =
+        80;
+
+
+    moveAMRToNode(
+        1,
+        "B1"
+    );
+
+    moveAMRToNode(
+        2,
+        "A3"
+    );
+
+    moveAMRToNode(
+        3,
+        "C3"
+    );
+
+
+    physicalLastHeading =
+        "E";
+
+
+    performanceState
+        .tasksCompleted =
+        0;
+
+    performanceState
+        .obstaclesDetected =
+        0;
+
+    performanceState
+        .successfulReroutes =
+        0;
+
+    performanceState
+        .taskTimes =
+        [];
+
+
+    updatePerformance();
+
+
+    document.getElementById(
+        "swarmText"
+    ).textContent =
+        "AMR-01 available";
+
+
+    updateEdgeAI(
+        "WAITING",
+        "Waiting for physical sensor data.",
+        "MONITOR",
+        false
+    );
+
+}
+
+
+/* =========================================================
+ DYNAMIC OBSTACLE
+========================================================= */
+
+function createObstacle(){
+
+    if(
+        obstacles.length >= 2
+    )
+        return;
+
+
+    const roads = [
+
+        {
+            x:40,
+            y:20
+        },
+
+        {
+            x:60,
+            y:50
+        },
+
+        {
+            x:35,
+            y:80
+        },
+
+        {
+            x:72,
+            y:50
+        }
+
+    ];
+
+
+    const pos =
+        roads[
+            Math.floor(
+                Math.random() *
+                roads.length
+            )
+        ];
+
+
+    const el =
+        document.createElement(
+            "div"
+        );
+
+
+    el.className =
+        "obstacle";
+
+
+    el.textContent =
+        "OBSTACLE";
+
+
+    el.style.left =
+        pos.x + "%";
+
+
+    el.style.top =
+        pos.y + "%";
+
+
+    document.getElementById(
+        "warehouse"
+    ).appendChild(
+        el
+    );
+
+
+    const obstacle = {
+
+        el:el,
+
+        x:pos.x,
+
+        y:pos.y,
+
+        created:
+            Date.now()
+
+    };
+
+
+    obstacles.push(
+        obstacle
+    );
+
+
+    performanceState
+        .obstaclesDetected++;
+
+
+    updatePerformance();
+
+
+    updateEdgeAI(
+        "OBSTACLE DETECTED",
+        "Dynamic warehouse obstacle detected.",
+        "STOP / ANALYZE ROAD / REROUTE",
+        true
+    );
+
+
+    setTimeout(
+        ()=>{
+
+            if(
+                el.parentNode
+            )
+                el.parentNode
+                    .removeChild(
+                        el
+                    );
+
+
+            obstacles =
+                obstacles.filter(
+                    o=>o !== obstacle
+                );
+
+        },
+        30000
+    );
+
+}
+
+
+/* =========================================================
+ START OBSTACLE SYSTEM
+========================================================= */
+
+function startObstacleSystem(){
+
+    if(obstacleTimer)
+        clearInterval(
+            obstacleTimer
+        );
+
+
+    setTimeout(
+        createObstacle,
+        8000
+    );
+
+
+    obstacleTimer =
+        setInterval(
+            createObstacle,
+            18000
+        );
+
+}
+
+
+/* =========================================================
+ OVERRIDE MQTT MESSAGE
+========================================================= */
+
+function handleMQTTMessageExtended(
+    topic,
+    payload
+){
+
+    let data;
+
+    try{
+
+        data =
+            JSON.parse(
+                payload.toString()
+            );
+
+    }
+    catch(e){
+
+        return;
+
+    }
+
+
+    if(
+        data.amr !==
+        "AMR-01"
+    )
+        return;
+
+
+    if(
+        topic.endsWith(
+            "/status"
+        )
+    ){
+
+        handlePhysicalStatus(
+            data
+        );
+
+    }
+
+
+    handleMQTTMessage(
+        topic,
+        payload
+    );
+
+}
+
+
+/* =========================================================
+ REPLACE MQTT MESSAGE LISTENER
+========================================================= */
+
+function reconnectMessagePatch(){
+
+    /*
+      The main connection function uses
+      handleMQTTMessage directly.
+
+      This function exists to keep the
+      architecture explicit.
+    */
+
+}
+
+
+/* =========================================================
+ INITIAL POSITION
+========================================================= */
+
+moveAMRToNode(
+    1,
+    "B1"
+);
+
+moveAMRToNode(
+    2,
+    "A3"
+);
+
+moveAMRToNode(
+    3,
+    "C3"
+);
+
+
+/* =========================================================
+ INITIAL UI
+========================================================= */
+
+updateInventory();
+
+updateBins();
+
+updatePerformance();
+
+startObstacleSystem();
+
+updateEdgeAI(
+    "WAITING",
+    "Waiting for AMR-01 physical telemetry.",
+    "MONITOR",
+    false
+);
+
+
+/* =========================================================
+ PERIODIC UI
+========================================================= */
+
+setInterval(
+    ()=>{
+
+        updateInventory();
+
+        updateBins();
+
+        updatePerformance();
+
+    },
+    1000
+);
+
+</script>
+
+</body>
+</html>
